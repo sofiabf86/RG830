@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cálculo de Retenciones RG 830</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables for Firebase (provided by Canvas environment)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+        let app;
+        let db;
+        let auth;
+        let userId; // Will store the authenticated user ID
+
+        window.firebaseInitialized = new Promise(async (resolve) => {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Sign in anonymously if no custom token is provided
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("Firebase initialized and user authenticated:", userId);
+                        // Resolve with db, auth, userId, and all necessary Firestore functions
+                        resolve({ db, auth, userId, collection, addDoc, getDocs, deleteDoc, doc, query, where, onSnapshot, updateDoc });
+                    } else {
+                        console.log("No user signed in.");
+                        resolve({ db: null, auth: null, userId: null, collection: null, addDoc: null, getDocs: null, deleteDoc: null, doc: null, query: null, where: null, onSnapshot: null, updateDoc: null });
+                    }
+                });
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                resolve({ db: null, auth: null, userId: null, collection: null, addDoc: null, getDocs: null, deleteDoc: null, doc: null, query: null, where: null, onSnapshot: null, updateDoc: null });
+            }
+        });
+
+        // Expose Firebase objects to the global scope for use in the main script
+        window.getFirebaseDb = () => db;
+        window.getFirebaseAuth = () => auth;
+        // The individual Firestore functions are now resolved by window.firebaseInitialized
+        // No need to expose them globally via window.getFirebase... functions for each.
+    </script>
+    <style>
+        body {
+            background-color: #1a202c; /* Dark blue background */
+            color: #e2e8f0; /* Light text color */
+            font-family: "Inter", sans-serif; /* Usar Inter como fuente principal */
+        }
+        /* Mejorar la legibilidad del texto en los input fields */
+        .input-field {
+            @apply bg-gray-700 border border-gray-600 text-gray-200 rounded-md p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500;
+        }
+        /* Color del texto del input field para una mejor lectura */
+        .input-field::placeholder {
+            color: #a0aec0; /* Slightly darker placeholder for contrast */
+        }
+        .input-field:focus {
+            color: #1b1c1d; /* Color de texto oscuro al enfocar */
+            background-color: #e2e8f0; /* Fondo claro al enfocar para mejor contraste */
+        }
+
+        .display-field {
+            @apply bg-purple-800 text-white font-bold rounded-md p-2;
+            min-height: 42px; /* Asegura una altura mínima para alineación */
+            display: flex;
+            align-items: center;
+            justify-content: flex-end; /* Alinea el contenido a la derecha */
+            padding-right: 1rem; /* Espaciado a la derecha */
+        }
+        .label-text {
+            @apply text-gray-300 text-sm mb-1 block; /* block para que ocupe su propia línea y mb-1 para espacio */
+        }
+        .section-title {
+            @apply text-xl font-semibold text-blue-300 mb-4;
+        }
+        .readable-dropdown {
+            color: #e2e8f0; /* Light text color */
+            background-color: #4a5568; /* Slightly lighter gray for contrast */
+            border: 1px solid #718096;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            width: 100%;
+        }
+        .readable-cell {
+            color: #e2e8f0; /* Light text color for table cells */
+        }
+        /* Ajuste para los valores mostrados al lado de los inputs - MODIFICADO */
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        /* Estilos para los botones de acción en la tabla */
+        .action-btn {
+            @apply text-xl cursor-pointer mx-1 hover:scale-110 transition-transform duration-200;
+        }
+        /* Estilo para el modal */
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #2d3748;
+            margin: auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 8px;
+            text-align: center;
+            color: #e2e8f0;
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: #e2e8f0;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="font-sans antialiased p-4">
+
+    <div class="max-w-4xl mx-auto bg-gray-800 p-6 rounded-lg shadow-xl"> <h1 class="text-3xl font-bold text-center mb-6 text-blue-400">RESOLUCION GENERAL N° 830</h1> <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"> <div>
+                <label for="cuit" class="label-text">CUIT del Proveedor:</label>
+                <input type="text" id="cuit" class="input-field" placeholder="Ej: 20-12345678-9">
+            </div>
+            <div>
+                <label for="razonSocial" class="label-text">Razón Social del Proveedor:</label>
+                <input type="text" id="razonSocial" class="input-field" placeholder="Ej: S.A. EJEMPLO">
+            </div>
+            <div>
+                <label for="fechaFactura" class="label-text">Fecha de la Factura:</label>
+                <input type="date" id="fechaFactura" class="input-field">
+            </div>
+            <div class="input-group">
+                <label for="tipoComprobante" class="label-text">Tipo de Comprobante:</label>
+                <select id="tipoComprobante" class="input-field readable-dropdown">
+                    <option value="01">01 - Factura / Tique Factura</option>
+                    <option value="06">06 - Orden de Pago</option>
+                    </select>
+            </div>
+            <div>
+                <label for="numeroFactura" class="label-text">Nº de Comprobante:</label>
+                <input type="text" id="numeroFactura" class="input-field" placeholder="Ej: A 0001-00000001">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 items-center"> <div class="input-group">
+                <label for="conceptoPago" class="label-text">Concepto del pago:</label>
+                <select id="conceptoPago" class="input-field readable-dropdown">
+                    <option value="">Seleccione un concepto</option>
+                </select>
+            </div>
+            <div class="hidden" id="conceptoDisplay"></div> </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 items-center"> <div>
+                <label for="situacionProveedor" class="label-text">Situación del proveedor en el Impuesto a las Ganancias:</label>
+                <select id="situacionProveedor" class="input-field readable-dropdown">
+                    <option value="Inscripto">Inscripto</option>
+                    <option value="No Inscripto">No Inscripto</option>
+                </select>
+            </div>
+            <div>
+                <label for="calculaEscalaToggle" class="label-text">Calcula retención según escala:</label>
+                <select id="calculaEscalaToggle" class="input-field readable-dropdown">
+                    <option value="NO">NO</option>
+                    <option value="SI">SI</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"> <div class="input-group">
+                <label for="importeNetoIVA" class="label-text">Importe a pagar, neto de IVA $:</label>
+                <input type="number" id="importeNetoIVA" class="input-field" value="0.00" min="0" step="0.01">
+            </div>
+
+            <div class="input-group">
+                <label for="pagosAnteriores" class="label-text">Pagos anteriores $:</label>
+                <input type="number" id="pagosAnteriores" class="input-field" value="0.00" min="0" step="0.01">
+            </div>
+
+            <div class="input-group">
+                <label for="retencionesAnteriores" class="label-text">Retenciones anteriores $:</label>
+                <input type="number" id="retencionesAnteriores" class="input-field" value="0.00" min="0" step="0.01">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"> <div>
+                <span class="label-text">MINIMO NO IMPONIBLE</span>
+            </div>
+            <div class="text-right">
+                <div class="display-field" id="minimoNoImponible">0,00</div>
+            </div>
+
+            <div>
+                <span class="label-text">Alícuota</span>
+            </div>
+            <div class="text-right">
+                <div class="display-field" id="alicuota">0,00%</div>
+            </div>
+
+            <div>
+                <span class="label-text">Importe total sujeto a retención (neto del Mínimo) por el mes</span>
+            </div>
+            <div class="text-right">
+                <div class="display-field" id="importeSujetoRetencion">0,00</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"> <div>
+                <span class="label-text">Alícuota s/ escala</span>
+            </div>
+            <div class="text-right">
+                <div class="display-field" id="alicuotaEscala">0,00%</div>
+            </div>
+            <div>
+                <span class="label-text">Monto fijo a retener s/ escala</span>
+            </div>
+            <div class="text-right">
+                <div class="display-field" id="montoFijoEscala">0,00</div>
+            </div>
+            <div>
+                <span class="label-text">Monto excedente para calculo s/ escala</span>
+            </div>
+            <div class="text-right">
+                <div class="display-field" id="montoExcedenteEscala">0,00</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"> <div>
+                <span class="label-text">Retención total del mes (acumulado)</span>
+            </div>
+            <div class="text-right">
+                <div class="display-field" id="retencionTotalMes">0,00</div>
+            </div>
+            <div>
+                <span class="label-text">Total retenido en el mes (para seguimiento por proveedor y mes)</span>
+            </div>
+            <div class="text-right">
+                <div class="display-field" id="totalRetenidoMes">0,00</div>
+            </div>
+        </div>
+
+        <div class="bg-red-700 text-white p-3 rounded-md text-center font-bold text-xl mb-6"> RETENCIÓN A EFECTUAR <span id="retencionAefectuar">0,00</span>
+        </div>
+
+        <div class="flex flex-col md:flex-row gap-4 mb-6">
+            <button id="calcularBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-md w-full md:w-1/3 transform transition duration-300 hover:scale-105">
+                Efectuar Retención
+            </button>
+            <button id="clearDataBtn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-md w-full md:w-1/3 transform transition duration-300 hover:scale-105">
+                Borrar Datos / Nuevo Proveedor
+            </button>
+            <button id="exportSicoreBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-md w-full md:w-1/3 transform transition duration-300 hover:scale-105">
+                Exportar a SICORE
+            </button>
+        </div>
+
+        <h2 class="section-title">Listado de Retenciones Practicadas (Este Mes)</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full bg-gray-700 rounded-lg shadow-md">
+                <thead>
+                    <tr class="bg-gray-600 text-gray-200 uppercase text-sm leading-normal">
+                        <th class="py-3 px-6 text-left">Fecha</th>
+                        <th class="py-3 px-6 text-left">Razón Social</th>
+                        <th class="py-3 px-6 text-left">CUIT</th>
+                        <th class="py-3 px-6 text-left">Concepto</th>
+                        <th class="py-3 px-6 text-right">Pagos Ant.</th>
+                        <th class="py-3 px-6 text-right">Ret. Ant.</th>
+                        <th class="py-3 px-6 text-right">Importe Neto IVA</th>
+                        <th class="py-3 px-6 text-right">Retención Practicada</th>
+                        <th class="py-3 px-6 text-center">Acciones</th> </tr>
+                </thead>
+                <tbody id="retencionesList" class="text-gray-300 text-sm font-light">
+                    </tbody>
+            </table>
+        </div>
+
+        <div id="customModal" class="modal hidden">
+            <div class="modal-content">
+                <span class="close-button" id="closeModalBtn">&times;</span>
+                <p id="modalMessage" class="text-lg font-semibold mb-4"></p>
+                <div id="modalActions" class="flex justify-center gap-4">
+                    <button id="modalConfirmBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md hidden">Confirmar</button>
+                    <button id="modalCancelBtn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md hidden">Cancelar</button>
+                    <button id="modalOkBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md hidden">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <footer class="text-center text-gray-500 text-xs mt-8">
+        &copy; 2024 RG 830 Calculator. Todos los derechos reservados.
+    </footer>
+
+    <script type="module">
+        // Import Firebase functions from the global scope
+        let db;
+        let auth;
+        let userId;
+        let retencionesCollection; // Firestore collection reference
+
+        // Destructure the Firestore functions here
+        let collection, addDoc, getDocs, deleteDoc, doc, query, where, onSnapshot, updateDoc;
+
+        // Wait for Firebase to be initialized
+        window.firebaseInitialized.then(firebase => {
+            db = firebase.db;
+            auth = firebase.auth;
+            userId = firebase.userId;
+
+            // Assign the destructured functions
+            collection = firebase.collection;
+            addDoc = firebase.addDoc;
+            getDocs = firebase.getDocs;
+            deleteDoc = firebase.deleteDoc;
+            doc = firebase.doc;
+            query = firebase.query;
+            where = firebase.where;
+            onSnapshot = firebase.onSnapshot;
+            updateDoc = firebase.updateDoc;
+
+            if (db && userId) {
+                // Use a 'public' collection for shared data
+                retencionesCollection = collection(db, `artifacts/${__app_id}/public/data/retenciones`);
+                console.log("Firestore collection path:", `artifacts/${__app_id}/public/data/retenciones`);
+                fetchRetenciones(); // Fetch existing retentions on load
+            } else {
+                showModal('Error: Firebase no pudo ser inicializado o el usuario no está autenticado. La persistencia de datos no estará disponible.', 'alert');
+            }
+        });
+
+        // Data for RG 830 activities
+        const rg830Data = [
+            {
+                codigo: 32,
+                normativa: 'Anexo II, inc. b) pto. 3',
+                concepto: 'Alquileres de Bienes Inmuebles Rurales SOCIEDADES',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 11200.00,
+                minimoNoInscripto: 11200.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 32,
+                normativa: 'Anexo II, inc. b) pto. 3',
+                concepto: 'Alquileres de Bienes Inmuebles Rurales PERSONAS HUMANAS',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 11200.00,
+                minimoNoInscripto: 11200.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 30,
+                normativa: 'Anexo II, inc. b) pto. 2',
+                concepto: 'Alquileres de Bienes Inmuebles Urbanos y Suburbanos SOCIEDADES',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 11200.00,
+                minimoNoInscripto: 11200.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 31,
+                normativa: 'Anexo II, inc. b) pto. 2',
+                concepto: 'Alquileres de Bienes Inmuebles Urbanos y Suburbanos PERSONAS HUMANAS',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 11200.00,
+                minimoNoInscripto: 11200.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 30,
+                normativa: 'Anexo II, inc. b) pto. 1',
+                concepto: 'Alquileres de bienes muebles. SOCIEDADES',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 11200.00,
+                minimoNoInscripto: 11200.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 25,
+                normativa: 'Anexo II, inc. j)',
+                concepto: 'Comisiones abonadas a comisionistas, consignatarios, rematadores, etc.',
+                porcentajeInscripto: 's/escala',
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 11200.00,
+                minimoNoInscripto: 11200.00,
+                calculaEscala: 'SI'
+            },
+            {
+                codigo: 111,
+                normativa: 'Anexo II, inc. n)',
+                concepto: 'Cualquier otra cesión o locación de derechos',
+                porcentajeInscripto: 0.50,
+                porcentajeNoInscripto: 2.00,
+                minimoInscripto: 0.00,
+                minimoNoInscripto: 0.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 55,
+                normativa: 'Anexo II, inc. i)',
+                concepto: 'Distribución de películas. Transmisión de programación. Televisión vía satelital.',
+                porcentajeInscripto: 0.50,
+                porcentajeNoInscripto: 2.00,
+                minimoInscripto: 0.00,
+                minimoNoInscripto: 0.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 110,
+                normativa: 'Anexo II, inc. h)',
+                concepto: 'Explotación de derechos de autor (Ley N° 11.723).',
+                porcentajeInscripto: 's/escala',
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 10000.00,
+                minimoNoInscripto: 10000.00,
+                calculaEscala: 'SI'
+            },
+            {
+                codigo: 124,
+                normativa: 'Anexo II, inc. k)',
+                concepto: 'Honorarios a corredores, viajantes de comercio y despachantes de aduana.',
+                porcentajeInscripto: 's/escala',
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 16800.00,
+                minimoNoInscripto: 16800.00,
+                calculaEscala: 'SI'
+            },
+            {
+                codigo: 116,
+                normativa: 'Anexo II, inc. k)',
+                concepto: 'Honorarios por dirección o administración de SA, SRL, etc.',
+                porcentajeInscripto: 's/escala',
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 67170.00,
+                minimoNoInscripto: 67170.00,
+                calculaEscala: 'SI'
+            },
+            {
+                codigo: 116,
+                normativa: 'Anexo II, inc. k)',
+                concepto: 'Honorarios por profesiones liberales',
+                porcentajeInscripto: 's/escala',
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 67170.00,
+                minimoNoInscripto: 67170.00,
+                calculaEscala: 'SI'
+            },
+            {
+                codigo: 43,
+                normativa: 'Anexo II, inc. d)',
+                concepto: 'Interés accionario, excedentes y retornos distribuidos entre asociados, cooperativas - excepto consumo. PERSONAS HUMANAS',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 7870.00,
+                minimoNoInscripto: 7870.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 43,
+                normativa: 'Anexo II, inc. d)',
+                concepto: 'Interés accionario, excedentes y retornos distribuidos entre asociados, cooperativas - excepto consumo. SOCIEDADES',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 25.00,
+                minimoInscripto: 7870.00,
+                minimoNoInscripto: 7870.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 21,
+                normativa: 'Anexo II, inc. a) pto. 2)',
+                concepto: 'Intereses por operaciones realizadas con el resto de los sujetos PERSONAS HUMANAS',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 5000.00,
+                minimoNoInscripto: 5000.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 21,
+                normativa: 'Anexo II, inc. a) pto. 2)',
+                concepto: 'Intereses por operaciones realizadas con el resto de los sujetos SOCIEDADES',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 25.00,
+                minimoInscripto: 7870.00,
+                minimoNoInscripto: 7870.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 19,
+                normativa: 'Anexo II, inc.a) pto. 1)',
+                concepto: 'Intereses por operaciones realizadas en entidades financieras',
+                porcentajeInscripto: 3.00,
+                porcentajeNoInscripto: 10.00,
+                minimoInscripto: 0.00,
+                minimoNoInscripto: 0.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 94,
+                normativa: 'Anexo II, inc. l)',
+                concepto: 'Locaciones de obra y/o servicios no ejecutados en relación de dependencia PERSONAS HUMANAS',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 67170.00,
+                minimoNoInscripto: 67170.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 94,
+                normativa: 'Anexo II, inc. l)',
+                concepto: 'Locaciones de obra y/o servicios no ejecutados en relación de dependencia SOCIEDADES',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 25.00,
+                minimoInscripto: 67170.00,
+                minimoNoInscripto: 67170.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 51,
+                normativa: 'Anexo II, inc. e)',
+                concepto: 'Obligaciones de no hacer, o por abandono o no ejercicio de una actividad. PERSONAS HUMANAS',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 5000.00,
+                minimoNoInscripto: 5000.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 51,
+                normativa: 'Anexo II, inc. e)',
+                concepto: 'Obligaciones de no hacer, o por abandono o no ejercicio de una actividad. SOCIEDADES',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 25.00,
+                minimoInscripto: 5000.00,
+                minimoNoInscripto: 5000.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 95,
+                normativa: 'Anexo II, inc. i)',
+                concepto: 'Operaciones de transporte de carga nacional e internacional. PERSONAS HUMANAS',
+                porcentajeInscripto: 0.25,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 67170.00,
+                minimoNoInscripto: 67170.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 95,
+                normativa: 'Anexo II, inc. i)',
+                concepto: 'Operaciones de transporte de carga nacional e internacional. SOCIEDADES',
+                porcentajeInscripto: 0.50,
+                porcentajeNoInscripto: 2.00,
+                minimoInscripto: 67170.00,
+                minimoNoInscripto: 67170.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 53,
+                normativa: 'Anexo II, inc. m)',
+                concepto: 'Operaciones realizadas por intermedio de mercados de cereales a término',
+                porcentajeInscripto: 0.50,
+                porcentajeNoInscripto: 2.00,
+                minimoInscripto: 0.00,
+                minimoNoInscripto: 0.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 35,
+                normativa: 'Anexo II, inc. c)',
+                concepto: 'Regalías PERSONAS HUMANAS',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 28.00,
+                minimoInscripto: 7870.00,
+                minimoNoInscripto: 7870.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 35,
+                normativa: 'Anexo II, inc. c)',
+                concepto: 'Regalías SOCIEDADES',
+                porcentajeInscripto: 6.00,
+                porcentajeNoInscripto: 25.00,
+                minimoInscripto: 7870.00,
+                minimoNoInscripto: 7870.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 78,
+                normativa: 'Anexo II, inc. g)',
+                concepto: 'Transferencia temporaria o definitiva de derechos de llave, marcas, patentes, etc.',
+                porcentajeInscripto: 2.00,
+                porcentajeNoInscripto: 10.00,
+                minimoInscripto: 224000.00,
+                minimoNoInscripto: 224000.00,
+                calculaEscala: 'NO'
+            },
+            {
+                codigo: 86,
+                normativa: 'Anexo II, inc. f)',
+                concepto: 'Venta de bienes muebles y bienes de cambio.',
+                porcentajeInscripto: 2.00,
+                porcentajeNoInscripto: 10.00,
+                minimoInscripto: 224000.00,
+                minimoNoInscripto: 224000.00,
+                calculaEscala: 'NO'
+            }
+        ];
+
+        // Tabla de cálculo según escala (Anexo VIII de RG 830)
+        const escalaRetencion = [
+            { desde: 0.00, hasta: 8000.00, fijo: 0.00, porcentaje: 5, excedente: 0.00 },
+            { desde: 8000.00, hasta: 16000.00, fijo: 400.00, porcentaje: 9, excedente: 8000.00 },
+            { desde: 16000.00, hasta: 24000.00, fijo: 1120.00, porcentaje: 12, excedente: 16000.00 },
+            { desde: 24000.00, hasta: 32000.00, fijo: 2080.00, porcentaje: 15, excedente: 24000.00 },
+            { desde: 32000.00, hasta: 48000.00, fijo: 3280.00, porcentaje: 19, excedente: 32000.00 },
+            { desde: 48000.00, hasta: 64000.00, fijo: 6320.00, porcentaje: 23, excedente: 48000.00 },
+            { desde: 64000.00, hasta: 96000.00, fijo: 10000.00, porcentaje: 27, excedente: 64000.00 },
+            { desde: 96000.00, hasta: Infinity, fijo: 18640.00, porcentaje: 31, excedente: 96000.00 }
+        ];
+
+
+        // DOM Elements
+        const conceptoPagoSelect = document.getElementById('conceptoPago');
+        const situacionProveedorSelect = document.getElementById('situacionProveedor');
+        const importeNetoIVAInput = document.getElementById('importeNetoIVA');
+        const pagosAnterioresInput = document.getElementById('pagosAnteriores');
+        const retencionesAnterioresInput = document.getElementById('retencionesAnteriores');
+        const tipoComprobanteSelect = document.getElementById('tipoComprobante'); // Nuevo
+        const numeroFacturaInput = document.getElementById('numeroFactura'); // Renombrado a numeroComprobante
+
+        const minimoNoImponibleDisplay = document.getElementById('minimoNoImponible');
+        const alicuotaDisplay = document.getElementById('alicuota');
+        const importeSujetoRetencionDisplay = document.getElementById('importeSujetoRetencion');
+        const retencionTotalMesDisplay = document.getElementById('retencionTotalMes');
+        const retencionAefectuarDisplay = document.getElementById('retencionAefectuar');
+        const calculaEscalaToggle = document.getElementById('calculaEscalaToggle');
+
+        const cuitInput = document.getElementById('cuit');
+        const razonSocialInput = document.getElementById('razonSocial');
+        const fechaFacturaInput = document.getElementById('fechaFactura');
+        const calcularBtn = document.getElementById('calcularBtn');
+        const clearDataBtn = document.getElementById('clearDataBtn');
+        const exportSicoreBtn = document.getElementById('exportSicoreBtn'); // Nuevo botón
+        const retencionesList = document.getElementById('retencionesList');
+        const totalRetenidoMesDisplay = document.getElementById('totalRetenidoMes');
+
+        // Display fields para escala
+        const alicuotaEscalaDisplay = document.getElementById('alicuotaEscala');
+        const montoFijoEscalaDisplay = document.getElementById('montoFijoEscala');
+        const montoExcedenteEscalaDisplay = document.getElementById('montoExcedenteEscala');
+
+        // Custom Modal Elements
+        const customModal = document.getElementById('customModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
+        const modalOkBtn = document.getElementById('modalOkBtn');
+
+        // Variables for calculation values
+        let currentMinimoNoImponible = 0;
+        let currentAlicuota = 0;
+        let currentCalculaEscala = 'NO';
+        let retencionesPracticadas = []; // Array para almacenar las retenciones practicadas en la sesión
+
+        // Mapa para acumular retenciones por CUIT y Mes/Año
+        const acumuladoRetencionesPorProveedorMes = {};
+
+        // --- Modal Functions ---
+        function showModal(message, type = 'alert', onConfirm = null, onCancel = null) {
+            modalMessage.textContent = message;
+            modalConfirmBtn.onclick = () => { customModal.classList.add('hidden'); if (onConfirm) onConfirm(); };
+            modalCancelBtn.onclick = () => { customModal.classList.add('hidden'); if (onCancel) onCancel(); };
+            modalOkBtn.onclick = () => { customModal.classList.add('hidden'); if (onConfirm) onConfirm(); }; // For alert, OK acts as confirm
+
+            if (type === 'confirm') {
+                modalConfirmBtn.classList.remove('hidden');
+                modalCancelBtn.classList.remove('hidden');
+                modalOkBtn.classList.add('hidden');
+            } else { // 'alert'
+                modalConfirmBtn.classList.add('hidden');
+                modalCancelBtn.classList.add('hidden');
+                modalOkBtn.classList.remove('hidden');
+            }
+            customModal.classList.remove('hidden');
+        }
+
+        closeModalBtn.addEventListener('click', () => {
+            customModal.classList.add('hidden');
+        });
+
+        window.onclick = function(event) {
+            if (event.target == customModal) {
+                customModal.classList.add('hidden');
+            }
+        }
+        // --- End Modal Functions ---
+
+
+        // Populate Concepto del pago dropdown
+        function populateConceptoPago() {
+            const uniqueConcepts = [...new Set(rg830Data.map(item => item.concepto))];
+            uniqueConcepts.sort().forEach(concepto => {
+                const option = document.createElement('option');
+                option.value = concepto;
+                option.textContent = concepto;
+                conceptoPagoSelect.appendChild(option);
+            });
+        }
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('es-AR', {
+                style: 'currency',
+                currency: 'ARS',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value);
+        }
+
+        function formatPercentage(value) {
+            return new Intl.NumberFormat('es-AR', {
+                style: 'percent',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(value / 100);
+        }
+
+        function calculateRetention() {
+            const selectedConcepto = conceptoPagoSelect.value;
+            const situacionProveedor = situacionProveedorSelect.value;
+            const importeNetoIVA = parseFloat(importeNetoIVAInput.value) || 0;
+            const pagosAnteriores = parseFloat(pagosAnterioresInput.value) || 0;
+            const retencionesAnteriores = parseFloat(retencionesAnterioresInput.value) || 0;
+            const calculaEscalaOption = calculaEscalaToggle.value;
+
+            let relevantData = rg830Data.find(item => item.concepto === selectedConcepto);
+
+            if (!relevantData) {
+                // Reset displays if no concept is selected or found
+                minimoNoImponibleDisplay.textContent = formatCurrency(0);
+                alicuotaDisplay.textContent = formatPercentage(0);
+                importeSujetoRetencionDisplay.textContent = formatCurrency(0);
+                retencionTotalMesDisplay.textContent = formatCurrency(0);
+                retencionAefectuarDisplay.textContent = formatCurrency(0);
+
+                alicuotaEscalaDisplay.textContent = formatPercentage(0);
+                montoFijoEscalaDisplay.textContent = formatCurrency(0);
+                montoExcedenteEscalaDisplay.textContent = formatCurrency(0);
+
+                currentMinimoNoImponible = 0;
+                currentAlicuota = 0;
+                currentCalculaEscala = 'NO';
+                updateTotalRetenidoMesDisplay(); // Update total even if no concept selected
+                return;
+            }
+
+            // Determine Minimo No Imponible and Alicuota based on situation
+            if (situacionProveedor === 'Inscripto') {
+                currentMinimoNoImponible = relevantData.minimoInscripto;
+                currentAlicuota = typeof relevantData.porcentajeInscripto === 'number' ? relevantData.porcentajeInscripto : 0;
+            } else { // No Inscripto
+                currentMinimoNoImponible = relevantData.minimoNoInscripto;
+                currentAlicuota = typeof relevantData.porcentajeNoInscripto === 'number' ? relevantData.porcentajeNoInscripto : 0;
+            }
+
+            currentCalculaEscala = calculaEscalaOption;
+
+            // Update display fields
+            minimoNoImponibleDisplay.textContent = formatCurrency(currentMinimoNoImponible);
+
+            // Calcular Importe total sujeto a retención
+            const importeTotalAcumuladoParaEscala = importeNetoIVA + pagosAnteriores; // Suma para el cálculo de escala
+            let importeSujetoRetencion = 0;
+            if (importeTotalAcumuladoParaEscala > currentMinimoNoImponible) {
+                importeSujetoRetencion = importeTotalAcumuladoParaEscala - currentMinimoNoImponible;
+            }
+            importeSujetoRetencionDisplay.textContent = formatCurrency(importeSujetoRetencion);
+
+            let retencionTotalMes = 0;
+            let alicuotaAplicada = currentAlicuota;
+            let montoFijoAplicado = 0;
+            let montoExcedenteAplicado = 0;
+
+            // Lógica para cálculo según escala
+            const conceptoPideEscala = (relevantData.porcentajeInscripto === 's/escala' || relevantData.porcentajeNoInscripto === 's/escala');
+
+            if (currentCalculaEscala === 'SI' && conceptoPideEscala) {
+                let tramoEncontrado = null;
+                for (let i = 0; i < escalaRetencion.length; i++) {
+                    const tramo = escalaRetencion[i];
+                    if (importeSujetoRetencion >= tramo.desde && importeSujetoRetencion < tramo.hasta) {
+                        tramoEncontrado = tramo;
+                        break;
+                    }
+                }
+
+                if (tramoEncontrado) {
+                    alicuotaAplicada = tramoEncontrado.porcentaje;
+                    montoFijoAplicado = tramoEncontrado.fijo;
+                    montoExcedenteAplicado = tramoEncontrado.excedente;
+
+                    retencionTotalMes = montoFijoAplicado + ((importeSujetoRetencion - montoExcedenteAplicado) * (alicuotaAplicada / 100));
+                } else {
+                    retencionTotalMes = 0;
+                }
+
+                alicuotaEscalaDisplay.textContent = formatPercentage(alicuotaAplicada);
+                montoFijoEscalaDisplay.textContent = formatCurrency(montoFijoAplicado);
+                montoExcedenteEscalaDisplay.textContent = formatCurrency(montoExcedenteAplicado);
+                alicuotaDisplay.textContent = 's/escala'; // Indica que se usó la escala
+
+            } else {
+                // Cálculo normal por alícuota fija
+                retencionTotalMes = importeSujetoRetencion * (currentAlicuota / 100);
+                alicuotaDisplay.textContent = formatPercentage(currentAlicuota);
+                alicuotaEscalaDisplay.textContent = formatPercentage(0);
+                montoFijoEscalaDisplay.textContent = formatCurrency(0);
+                montoExcedenteEscalaDisplay.textContent = formatCurrency(0);
+            }
+
+            // Calcular la retención a efectuar
+            let retencionAefectuar = retencionTotalMes - retencionesAnteriores;
+            if (retencionAefectuar < 0) {
+                retencionAefectuar = 0; // No se retiene un monto negativo
+            }
+
+            retencionTotalMesDisplay.textContent = formatCurrency(retencionTotalMes); // Esta es la retención teórica total del mes
+            retencionAefectuarDisplay.textContent = formatCurrency(retencionAefectuar);
+
+            // Actualizar "Total retenido en el mes" (acumulado por proveedor y mes)
+            updateTotalRetenidoMesDisplay();
+        }
+
+
+        async function addRetentionToList() {
+            const fecha = fechaFacturaInput.value;
+            const razonSocial = razonSocialInput.value;
+            const cuit = cuitInput.value;
+            const concepto = conceptoPagoSelect.value;
+            const importeNetoIVA = parseFloat(importeNetoIVAInput.value) || 0;
+            const pagosAnteriores = parseFloat(pagosAnterioresInput.value) || 0;
+            const retencionesAnteriores = parseFloat(retencionesAnterioresInput.value) || 0;
+            const retencionPracticada = parseFloat(retencionAefectuarDisplay.textContent.replace(/[^0-9,-]+/g,"").replace(",", ".")) || 0;
+            const tipoComprobante = tipoComprobanteSelect.value;
+            const numeroComprobante = numeroFacturaInput.value;
+
+            if (!fecha || !razonSocial || !cuit || !concepto || importeNetoIVA <= 0 || !tipoComprobante || !numeroComprobante) {
+                showModal('Por favor, complete todos los campos requeridos (CUIT, Razón Social, Fecha, Tipo de Comprobante, N° de Comprobante, Concepto del Pago, Importe Neto de IVA) antes de efectuar la retención.', 'alert');
+                return;
+            }
+            if (retencionPracticada <= 0) {
+                 showModal('La retención calculada es cero. No se agregará al listado.', 'alert');
+                 return;
+            }
+
+            // --- Duplicate Invoice Detection ---
+            if (db && userId) {
+                const q = query(retencionesCollection,
+                    where("cuit", "==", cuit),
+                    where("tipoComprobante", "==", tipoComprobante),
+                    where("numeroComprobante", "==", numeroComprobante),
+                    where("fecha", "==", fecha)
+                );
+                try {
+                    const querySnapshot = await getDocs(q);
+                    if (!querySnapshot.empty) {
+                        showModal('Ya existe una retención registrada para este CUIT, Tipo de Comprobante, Número de Comprobante y Fecha. ¿Desea agregarla de todos modos?', 'confirm',
+                            () => saveRetention(fecha, razonSocial, cuit, concepto, importeNetoIVA, pagosAnteriores, retencionesAnteriores, retencionPracticada, tipoComprobante, numeroComprobante),
+                            () => console.log('Operación cancelada por el usuario.')
+                        );
+                        return; // Stop if duplicate and user needs to confirm
+                    }
+                } catch (error) {
+                    console.error("Error checking for duplicates:", error);
+                    showModal('Error al verificar duplicados. Intente nuevamente.', 'alert');
+                    return;
+                }
+            }
+            // --- End Duplicate Invoice Detection ---
+
+            saveRetention(fecha, razonSocial, cuit, concepto, importeNetoIVA, pagosAnteriores, retencionesAnteriores, retencionPracticada, tipoComprobante, numeroComprobante);
+        }
+
+        async function saveRetention(fecha, razonSocial, cuit, concepto, importeNetoIVA, pagosAnteriores, retencionesAnteriores, retencionPracticada, tipoComprobante, numeroComprobante, docId = null) {
+            const newRetention = {
+                fecha: fecha,
+                razonSocial: razonSocial,
+                cuit: cuit,
+                concepto: concepto,
+                pagosAnteriores: pagosAnteriores,
+                retencionesAnteriores: retencionesAnteriores,
+                importeNetoIVA: importeNetoIVA,
+                retencionPracticada: retencionPracticada,
+                tipoComprobante: tipoComprobante,
+                numeroComprobante: numeroComprobante,
+                timestamp: new Date() // Add timestamp for ordering/tracking
+            };
+
+            try {
+                if (db && userId) {
+                    if (docId) {
+                        // Update existing document in Firestore
+                        await updateDoc(doc(retencionesCollection, docId), newRetention);
+                        // showModal('Retención modificada exitosamente.', 'alert'); // Removed success message
+                    } else {
+                        // Add new document to Firestore
+                        await addDoc(retencionesCollection, newRetention);
+                        // showModal('Retención agregada exitosamente.', 'alert'); // Removed success message
+                    }
+                    fetchRetenciones(); // Re-fetch all data to update UI
+                } else {
+                    // Fallback for no Firebase (in-memory only, no persistence)
+                    if (docId) {
+                        const index = retencionesPracticadas.findIndex(r => r.id === docId);
+                        if (index !== -1) {
+                            retencionesPracticadas[index] = { ...newRetention, id: docId };
+                        }
+                    } else {
+                        retencionesPracticadas.push({ ...newRetention, id: Date.now().toString() }); // Assign a temporary ID
+                    }
+                    renderRetencionesList();
+                }
+            } catch (error) {
+                console.error("Error saving retention:", error);
+                showModal('Error al guardar la retención. Intente nuevamente.', 'alert');
+            }
+
+            clearInputs();
+        }
+
+
+        async function fetchRetenciones() {
+            if (!db || !userId) return;
+
+            try {
+                // Use onSnapshot for real-time updates
+                onSnapshot(retencionesCollection, (snapshot) => {
+                    retencionesPracticadas = [];
+                    // Clear accumulated totals
+                    for (const key in acumuladoRetencionesPorProveedorMes) {
+                        delete acumuladoRetencionesPorProveedorMes[key];
+                    }
+
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        retencionesPracticadas.push({ id: doc.id, ...data });
+
+                        // Recalculate accumulated totals
+                        const mesAnio = data.fecha.substring(0, 7);
+                        const key = `${data.cuit}-${mesAnio}`;
+                        acumuladoRetencionesPorProveedorMes[key] = (acumuladoRetencionesPorProveedorMes[key] || 0) + data.retencionPracticada;
+                    });
+                    retencionesPracticadas.sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate()); // Sort by most recent
+                    renderRetencionesList();
+                });
+            } catch (error) {
+                console.error("Error fetching retentions:", error);
+                showModal('Error al cargar las retenciones. Intente recargar la página.', 'alert');
+            }
+        }
+
+
+        function renderRetencionesList() {
+            retencionesList.innerHTML = ''; // Clear previous list
+
+            retencionesPracticadas.forEach((retention, index) => {
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-600', 'border-b', 'border-gray-700', 'readable-cell');
+
+                row.innerHTML = `
+                    <td class="py-3 px-6 text-left whitespace-nowrap">${new Date(retention.fecha).toLocaleDateString('es-AR')}</td>
+                    <td class="py-3 px-6 text-left">${retention.razonSocial}</td>
+                    <td class="py-3 px-6 text-left">${retention.cuit}</td>
+                    <td class="py-3 px-6 text-left">${retention.concepto}</td>
+                    <td class="py-3 px-6 text-right">${formatCurrency(retention.pagosAnteriores)}</td>
+                    <td class="py-3 px-6 text-right">${formatCurrency(retention.retencionesAnteriores)}</td>
+                    <td class="py-3 px-6 text-right">${formatCurrency(retention.importeNetoIVA)}</td>
+                    <td class="py-3 px-6 text-right font-bold text-green-400">${formatCurrency(retention.retencionPracticada)}</td>
+                    <td class="py-3 px-6 text-center">
+                        <span class="action-btn text-yellow-400" onclick="window.editRetention('${retention.id}')">✏️</span>
+                        <span class="action-btn text-red-400" onclick="window.deleteRetention('${retention.id}')">🗑️</span>
+                    </td>
+                `;
+                retencionesList.appendChild(row);
+            });
+
+            updateTotalRetenidoMesDisplay();
+        }
+
+        function updateTotalRetenidoMesDisplay() {
+            const currentCuit = cuitInput.value;
+            const currentFecha = fechaFacturaInput.value;
+            let currentMesAnio = '';
+            if (currentFecha) {
+                currentMesAnio = currentFecha.substring(0, 7);
+            }
+            const currentKey = `${currentCuit}-${currentMesAnio}`;
+            totalRetenidoMesDisplay.textContent = formatCurrency(acumuladoRetencionesPorProveedorMes[currentKey] || 0);
+        }
+
+        window.editRetention = (id) => {
+            const retentionToEdit = retencionesPracticadas.find(r => r.id === id);
+            if (!retentionToEdit) return;
+
+            // Populate input fields with data from the selected retention
+            cuitInput.value = retentionToEdit.cuit;
+            razonSocialInput.value = retentionToEdit.razonSocial;
+            fechaFacturaInput.value = retentionToEdit.fecha;
+            tipoComprobanteSelect.value = retentionToEdit.tipoComprobante;
+            numeroFacturaInput.value = retentionToEdit.numeroComprobante;
+            conceptoPagoSelect.value = retentionToEdit.concepto;
+            importeNetoIVAInput.value = retentionToEdit.importeNetoIVA;
+            pagosAnterioresInput.value = retentionToEdit.pagosAnteriores;
+            retencionesAnterioresInput.value = retentionToEdit.retencionesAnteriores;
+
+            // Delete the original record from Firestore (or in-memory)
+            // This is to allow re-saving with the same ID or as a new record
+            deleteRetention(id, false); // Pass false to avoid re-confirming deletion
+
+            calculateRetention(); // Recalculate based on the loaded data
+            showModal('Los datos de la retención han sido cargados para su edición. Por favor, realice los cambios y haga clic en "Efectuar Retención" nuevamente.', 'alert');
+        }
+
+        window.deleteRetention = async (id, confirmUser = true) => {
+            const performDelete = async () => {
+                try {
+                    if (db && userId) {
+                        await deleteDoc(doc(retencionesCollection, id));
+                        // showModal('Retención eliminada exitosamente.', 'alert'); // Removed success message
+                    } else {
+                        // In-memory deletion fallback
+                        const index = retencionesPracticadas.findIndex(r => r.id === id);
+                        if (index !== -1) {
+                            const retentionToDelete = retencionesPracticadas[index];
+                            retencionesPracticadas.splice(index, 1);
+                            const mesAnio = retentionToDelete.fecha.substring(0, 7);
+                            const key = `${retentionToDelete.cuit}-${mesAnio}`;
+                            acumuladoRetencionesPorProveedorMes[key] = (acumuladoRetencionesPorProveedorMes[key] || 0) - retentionToDelete.retencionPracticada;
+                            if (acumuladoRetencionesPorProveedorMes[key] < 0) acumuladoRetencionesPorProveedorMes[key] = 0;
+                        }
+                    }
+                    renderRetencionesList(); // Re-render the list
+                    calculateRetention(); // Recalculate to update displays
+                } catch (error) {
+                    console.error("Error deleting retention:", error);
+                    showModal('Error al eliminar la retención. Intente nuevamente.', 'alert');
+                }
+            };
+
+            if (confirmUser) {
+                showModal('¿Está seguro de que desea eliminar esta retención?', 'confirm', performDelete);
+            } else {
+                performDelete();
+            }
+        }
+
+
+        function clearInputs() {
+            cuitInput.value = '';
+            razonSocialInput.value = '';
+            fechaFacturaInput.value = '';
+            numeroFacturaInput.value = '';
+            tipoComprobanteSelect.value = '01'; // Reset to default
+            conceptoPagoSelect.value = '';
+            situacionProveedorSelect.value = 'Inscripto'; // Reset to default
+            importeNetoIVAInput.value = '0.00';
+            pagosAnterioresInput.value = '0.00';
+            retencionesAnterioresInput.value = '0.00';
+            calculaEscalaToggle.value = 'NO'; // Reset to default
+
+            calculateRetention(); // Recalculate to clear all display fields
+            updateTotalRetenidoMesDisplay(); // Ensure total is reset for new entry context
+        }
+
+        function padLeft(str, len, char) {
+            return String(char).repeat(Math.max(0, len - String(str).length)) + str;
+        }
+
+        function padRight(str, len, char) {
+            return str + String(char).repeat(Math.max(0, len - String(str).length));
+        }
+
+        function formatSicoreNumber(value, totalLength, decimalPlaces) {
+            let numStr = (value || 0).toFixed(decimalPlaces);
+            numStr = numStr.replace('.', ''); // Remove decimal point for SICORE format
+            return padLeft(numStr, totalLength, '0');
+        }
+
+        function exportToSicore() {
+            if (retencionesPracticadas.length === 0) {
+                showModal('No hay retenciones en la lista para exportar.', 'alert');
+                return;
+            }
+
+            let sicoreContent = '';
+
+            retencionesPracticadas.forEach(retencion => {
+                const relevantData = rg830Data.find(item => item.concepto === retencion.concepto);
+                if (!relevantData) {
+                    console.warn(`Concepto no encontrado para SICORE: ${retencion.concepto}`);
+                    return; // Skip if data is incomplete
+                }
+
+                const fechaEmisionComprobante = retencion.fecha.split('-').reverse().join(''); // DD-MM-YYYY to DDMMYYYY
+                const fechaEmisionRetencion = new Date().toLocaleDateString('es-AR').split('/').join(''); // Current date DDMMYYYY
+
+                const codigoComprobante = padLeft(retencion.tipoComprobante, 2, '0'); // e.g., '01', '06'
+                const numeroComprobante = padLeft(retencion.numeroComprobante.replace(/[^0-9]/g, ''), 16, '0'); // Max 16 digits, remove non-numeric
+                const importeComprobante = formatSicoreNumber(retencion.importeNetoIVA, 16, 2); // 16 chars, 2 decimals
+                const codigoImpuesto = '715'; // Ganancias
+                const codigoRegimen = padLeft(relevantData.codigo, 3, '0');
+                const codigoOperacion = '0'; // Normal operation
+                const baseCalculo = formatSicoreNumber(retencion.importeNetoIVA, 14, 2); // Base de cálculo (Importe a pagar, neto de IVA)
+                const importeRetencion = formatSicoreNumber(retencion.retencionPracticada, 14, 2); // Importe de la retención
+                const codigoCondicion = retencion.situacionProveedor === 'Inscripto' ? '01' : '02'; // 01: Inscripto, 02: No Inscripto
+                const sujetoSuspendido = 'N'; // Assuming not suspended
+                const porcentajeExclusion = '000000'; // 6 chars, 3 decimals (e.g., 00.000)
+                const fechaPublicacion = '          '; // 10 spaces
+                const tipoDocumentoRetenido = '80'; // CUIT
+                const numeroDocumentoRetenido = padLeft(retencion.cuit.replace(/[^0-9]/g, ''), 20, '0'); // CUIT, remove non-numeric, max 20 digits
+                const numeroCertificadoOriginal = '              '; // 14 spaces
+
+                const line =
+                    codigoComprobante + // 1-2
+                    fechaEmisionComprobante + // 3-12 (DDMMYYYY)
+                    numeroComprobante + // 13-28 (16 chars)
+                    importeComprobante + // 29-44 (16 chars, 2 decimals)
+                    codigoImpuesto + // 45-48 (4 chars)
+                    codigoRegimen + // 49-51 (3 chars)
+                    codigoOperacion + // 52-52 (1 char)
+                    baseCalculo + // 53-66 (14 chars, 2 decimals)
+                    fechaEmisionRetencion + // 67-76 (DDMMYYYY)
+                    codigoCondicion + // 77-78 (2 chars)
+                    sujetoSuspendido + // 79-79 (1 char)
+                    importeRetencion + // 80-93 (14 chars, 2 decimals)
+                    porcentajeExclusion + // 94-99 (6 chars)
+                    fechaPublicacion + // 100-109 (10 spaces)
+                    tipoDocumentoRetenido + // 110-111 (2 chars)
+                    numeroDocumentoRetenido + // 112-131 (20 chars)
+                    numeroCertificadoOriginal; // 132-145 (14 spaces)
+
+                sicoreContent += line + '\r\n'; // Use \r\n for Windows line endings
+            });
+
+            const blob = new Blob([sicoreContent], { type: 'text/plain;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'retenciones_sicore.txt';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showModal('Archivo SICORE exportado exitosamente.', 'alert');
+        }
+
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            populateConceptoPago();
+            calculateRetention(); // Initial calculation on load
+        });
+
+        conceptoPagoSelect.addEventListener('change', calculateRetention);
+        situacionProveedorSelect.addEventListener('change', calculateRetention);
+        importeNetoIVAInput.addEventListener('input', calculateRetention);
+        pagosAnterioresInput.addEventListener('input', calculateRetention);
+        retencionesAnterioresInput.addEventListener('input', calculateRetention);
+        calculaEscalaToggle.addEventListener('change', calculateRetention);
+        calcularBtn.addEventListener('click', addRetentionToList);
+        clearDataBtn.addEventListener('click', clearInputs);
+        exportSicoreBtn.addEventListener('click', exportToSicore); // Listener para el botón de exportar
+
+        // Agregamos listeners para actualizar el "Total retenido en el mes" cuando cambian CUIT o Fecha
+        cuitInput.addEventListener('input', updateTotalRetenidoMesDisplay);
+        fechaFacturaInput.addEventListener('change', updateTotalRetenidoMesDisplay);
+        tipoComprobanteSelect.addEventListener('change', calculateRetention); // Nuevo listener
+        numeroFacturaInput.addEventListener('input', calculateRetention); // Nuevo listener
+
+    </script>
+</body>
+</html>
+
